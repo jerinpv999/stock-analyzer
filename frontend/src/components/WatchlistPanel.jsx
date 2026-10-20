@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addWatchlist, getWatchlist, removeWatchlist, syncNow } from '../api'
+import { addWatchlist, analyzeStored, getWatchlist, removeWatchlist, syncNow } from '../api'
 import { fmt, pct, verdictClass } from '../format'
 
 const SHORT = { day_trading: 'Day', short_term: 'Short', long_term: 'Long' }
 
-export default function WatchlistPanel({ onOpen }) {
+export default function WatchlistPanel({ onOpen, onResult }) {
   const [data, setData] = useState(null)
   const [symbols, setSymbols] = useState('')
   const [kind, setKind] = useState('')
   const [days, setDays] = useState(365)
   const [err, setErr] = useState('')
   const [showLog, setShowLog] = useState(false)
+  const [busy, setBusy] = useState(null) // symbol being analysed, or "all: 2/5"
   const timer = useRef(null)
 
   const load = useCallback(() => getWatchlist().then(setData).catch((e) => setErr(e.message)), [])
@@ -39,6 +40,22 @@ export default function WatchlistPanel({ onOpen }) {
     setErr('')
     try { await syncNow(syms); setShowLog(true); load() } catch (x) { setErr(x.message) }
   }
+  const analyse = async (sym) => {
+    setErr(''); setBusy(sym)
+    try { onResult(await analyzeStored(sym)) } catch (x) { setErr(x.message) } finally { setBusy(null) }
+  }
+  const analyseAll = async () => {
+    setErr('')
+    const syms = (data?.items || []).filter((i) => i.rows >= 30).map((i) => i.symbol)
+    const failed = []
+    for (let n = 0; n < syms.length; n++) {
+      setBusy(`all ${n + 1}/${syms.length} · ${syms[n]}`)
+      try { await analyzeStored(syms[n]) } catch (x) { failed.push(`${syms[n]}: ${x.message}`) }
+    }
+    setBusy(null)
+    if (failed.length) setErr(failed.join(' · '))
+    load()
+  }
   const remove = async (s) => {
     if (!window.confirm(`Stop tracking ${s}? Stored history and past analyses are kept.`)) return
     await removeWatchlist(s); load()
@@ -61,12 +78,18 @@ export default function WatchlistPanel({ onOpen }) {
                 : 'Automatic schedule is off (AUTO_SYNC=false) — use Sync now.'}
             </span>
           </div>
-          <button className="primary" disabled={job?.running || !data?.items?.length} onClick={() => sync()}>
-            {job?.running ? 'Syncing…' : 'Sync now'}
-          </button>
+          <div className="row" data-tour="wl-sync">
+            <button disabled={!!busy || job?.running || !data?.items?.some((i) => i.rows >= 30)} onClick={analyseAll}
+              title="Re-run the analysis on data already stored, without downloading">
+              {busy?.startsWith('all') ? `Analysing ${busy.slice(4)}…` : 'Analyse all'}
+            </button>
+            <button className="primary" disabled={job?.running || !!busy || !data?.items?.length} onClick={() => sync()}>
+              {job?.running ? 'Syncing…' : 'Sync now'}
+            </button>
+          </div>
         </div>
 
-        <form className="wl-add" onSubmit={add}>
+        <form className="wl-add" onSubmit={add} data-tour="wl-add">
           <input className="grow" value={symbols} onChange={(e) => setSymbols(e.target.value.toUpperCase())}
             placeholder="NSE symbols, comma-separated — e.g. RELIANCE, TCS, M&M, NIFTY 50" />
           <select value={kind} onChange={(e) => setKind(e.target.value)} title="Stock or index">
@@ -105,7 +128,7 @@ export default function WatchlistPanel({ onOpen }) {
         )}
       </section>
 
-      <section className="panel">
+      <section className="panel" data-tour="wl-table">
         <div className="table-wrap">
           <table className="tbl wl">
             <thead>
@@ -131,7 +154,11 @@ export default function WatchlistPanel({ onOpen }) {
                   ))}
                   <td className="tiny wl-pat" title={it.pattern || ''}>{it.pattern || <span className="muted">—</span>}</td>
                   <td className="wl-actions">
-                    <button disabled={!it.verdicts} onClick={() => onOpen(it.symbol)}>Open</button>
+                    <button className="primary sm" disabled={it.rows < 30 || !!busy || job?.running} onClick={() => analyse(it.symbol)}
+                      title={it.rows < 30 ? 'Needs at least 30 sessions — sync first' : 'Run analysis on stored data'}>
+                      {busy === it.symbol ? 'Analysing…' : 'Analyse'}
+                    </button>
+                    <button disabled={!it.verdicts} onClick={() => onOpen(it.symbol)} title="Show last saved analysis">Open</button>
                     <button className="ghost" disabled={job?.running} onClick={() => sync([it.symbol])} title="Sync this symbol">↻</button>
                     <button className="ghost" onClick={() => remove(it.symbol)} title="Remove">✕</button>
                   </td>

@@ -4,7 +4,7 @@ export default function MemoryPanel({ memory, backend }) {
   const prev = memory.previous
   const track = memory.track_record?.by_timeframe
   return (
-    <section className="panel">
+    <section className="panel" data-tour="memory">
       <div className="panel-head">
         <h3>Memory · previous analyses</h3>
         <span className="muted tiny">ChromaDB · {memory.total_past_analyses} past analyses · embeddings: {backend}</span>

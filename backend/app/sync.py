@@ -22,7 +22,7 @@ import pandas as pd
 
 from .bhavcopy import BhavcopyClient, BhavcopyError, guess_kind, norm_symbol, pick_rows, weekdays
 from .config import AUTO_SYNC, AUTO_SYNC_ON_START, AUTO_SYNC_TIME, RESULTS_DIR, WATCHLIST_FILE
-from .data_loader import _history_path, merge_history
+from .data_loader import _history_path, clean_index, merge_history
 
 log = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -216,6 +216,10 @@ class SyncJob:
             note = " (today's file may not be published yet)" if recent else ""
             self._log(f"No bhavcopy for {len(missing_days)} weekday(s) — holidays or unpublished{note}")
         self._log(f"Downloaded/used {found_days} trading day file(s); {client.downloads} new download(s)")
+        if client.mismatched:
+            ex = ", ".join(f"{d} had {got[0]}" for _, d, got in client.mismatched[:3])
+            self._log(f"Ignored {len(client.mismatched)} file(s) whose contents were for a different date ({ex}) — "
+                      "they'll be retried next sync")
 
         for sym, parts in collected.items():
             res = {"new_rows": 0, "analysed": False}
@@ -230,8 +234,11 @@ class SyncJob:
                 res["message"] = found
                 self.state["results"][sym] = res
                 continue
-            new = pd.concat(parts).set_index("date").sort_index()
-            new.index.name = "date"
+            new = pd.concat(parts).set_index("date")
+            dupes = int(new.index.duplicated().sum())
+            if dupes:
+                self._log(f"{sym}: {dupes} repeated trade date(s) in downloaded files — kept one row per date")
+            new = clean_index(new)
             cols = ["open", "high", "low", "close", "volume"] + (["vwap_src"] if "vwap_src" in new else [])
             merged, total = analyse.merge(new[cols], sym)
             res.update({"new_rows": len(new), "total_rows": total, "last_date": new.index[-1].date().isoformat()})

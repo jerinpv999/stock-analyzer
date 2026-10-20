@@ -139,6 +139,7 @@ class BhavcopyClient:
         self.session.headers.update(HEADERS)
         self._warmed = False
         self.downloads = 0
+        self.mismatched: list = []
 
     # -- network
     def _warmup(self):
@@ -197,16 +198,35 @@ class BhavcopyClient:
         path.write_bytes(raw)
         return raw
 
+    def _checked(self, kind: str, d: date, raw: bytes) -> pd.DataFrame | None:
+        """Parse a file and make sure it really is for day `d`. NSE occasionally serves a
+        previous session's content under a new date; caching that would corrupt history."""
+        df = PARSERS[kind](raw)
+        dates = set(df["date"].dt.date.dropna().unique())
+        if dates and dates != {d}:
+            log.warning("%s file for %s contains trade date(s) %s — ignoring it", kind, d, sorted(dates)[:3])
+            self._discard(kind, d)
+            self.mismatched.append((kind, d.isoformat(), sorted(str(x) for x in dates)[:3]))
+            return None
+        return df
+
+    def _discard(self, kind: str, d: date):
+        url = URLS[kind].format(ymd=d.strftime("%Y%m%d"), dmy=d.strftime("%d%m%Y"))
+        (BHAV_DIR / str(d.year) / url.rsplit("/", 1)[1]).unlink(missing_ok=True)
+
     def equity_day(self, d: date) -> pd.DataFrame | None:
         for kind in ("eq_udiff", "eq_full"):
             try:
                 raw = self._fetch(kind, d)
                 if raw is not None:
-                    return PARSERS[kind](raw)
+                    df = self._checked(kind, d, raw)
+                    if df is not None:
+                        return df
             except BhavcopyError:
                 raise
             except Exception as e:  # noqa: BLE001  corrupt/changed file: try the other source
                 log.warning("could not parse %s for %s: %s", kind, d, e)
+                self._discard(kind, d)
         return None
 
     def index_day(self, d: date) -> pd.DataFrame | None:
@@ -214,9 +234,10 @@ class BhavcopyClient:
         if raw is None:
             return None
         try:
-            return parse_index(raw)
+            return self._checked("index", d, raw)
         except Exception as e:  # noqa: BLE001
             log.warning("could not parse index file for %s: %s", d, e)
+            self._discard("index", d)
             return None
 
 

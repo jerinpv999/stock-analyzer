@@ -22,7 +22,7 @@ export default function PatternPanel({ patterns }) {
   const recent = [...occurrences].reverse().slice(0, 8)
 
   return (
-    <section className="panel">
+    <section className="panel" data-tour="patterns">
       <div className="panel-head">
         <h3>Candlestick patterns</h3>
         <span className="muted tiny">22 patterns · success judged {H} sessions later</span>

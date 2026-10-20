@@ -10,10 +10,33 @@ Upload an NSE historical-price CSV for any stock and get:
 
 > Educational tool only — not investment advice and not a SEBI-registered research recommendation.
 
+> 📘 Full user guide: [`docs/NSE-Stock-Analyzer-User-Guide.pdf`](docs/NSE-Stock-Analyzer-User-Guide.pdf). The app also has a built-in guided tour: it opens on first visit, and the **Tour** button replays it.
+
+## Quick start with Docker (recommended)
+
+```bash
+mkdir -p ~/nse-analyzer-data          # your data lives here, outside the project
+docker compose up -d --build
+```
+
+Open http://localhost:8080 (API docs: http://localhost:8000/docs).
+
+- **Settings:** copy `.env.example` to `.env` to change the data folder, port, sync time or your user id (`HOST_UID`/`HOST_GID`, so data files stay owned by you).
+- **Logs:** `docker compose logs -f backend`.
+- **Updating:** replace the code, then run `docker compose up -d --build`. Your data is untouched.
+- **Auto-restart:** the containers restart automatically, so the 18:45 IST daily sync keeps running.
+
+## Using it with Claude
+
+`skills/nse-stock-analyzer/SKILL.md` teaches Claude how to operate the app through its API. It covers adding symbols, syncing, analysing and reading results honestly, including whether the models have an edge. Add the folder as a skill (or put it in your project's skills directory for Claude Code), then ask things like *"Add HDFCBANK to my watchlist and give me the short-term view."*
+
 ## Project layout
 
 ```
 nse-analyzer/
+├── docker-compose.yml       Docker setup (backend + nginx-served frontend)
+├── docs/                    PDF user guide
+├── skills/                  Claude skill for operating the app
 ├── backend/                 FastAPI + pandas + scikit-learn + ChromaDB
 │   ├── app/
 │   │   ├── main.py          API endpoints
@@ -24,9 +47,26 @@ nse-analyzer/
 │   │   ├── memory.py        ChromaDB storage, recall, track-record evaluation
 │   │   └── config.py
 │   ├── scripts/make_sample.py   Generates a synthetic NSE-format CSV for testing
-│   └── data/                created at runtime: history/, models/, chroma_db/
+│   └── scripts/
 └── frontend/                React (Vite) + lightweight-charts + Recharts
 ```
+
+## Where your data lives
+
+Everything the app builds up is stored **outside the project folder**, in `~/nse-analyzer-data`:
+- price history
+- watchlist
+- trained models
+- ChromaDB memory
+- bhavcopy cache
+
+On Linux that's `/home/<you>/nse-analyzer-data`; on Windows, `C:\Users\<you>\nse-analyzer-data`.
+
+This means you can delete or replace the project folder with a new zip at any time without losing anything. The exact path is shown in the app's header and at `/api/health`.
+
+- **Different location:** set `NSE_DATA_DIR`, e.g. `NSE_DATA_DIR=/mnt/backup/nse-data uvicorn app.main:app --port 8000`.
+- **Upgrading from an older version** that kept data in `backend/data`: the first start copies it to the new folder automatically and leaves a `MOVED_TO.txt` note. Delete the old folder once you've checked.
+- **Backup:** copy the `nse-analyzer-data` folder.
 
 ## Setup
 
@@ -70,7 +110,7 @@ Open the **Watchlist** tab and add symbols, e.g. `RELIANCE, TCS, M&M, NIFTY 50`.
 - **Symbols you already uploaded by CSV** simply continue from their last date.
 - **Every weekday at 18:45 IST** the backend downloads that day's bhavcopy, appends the new session to every watchlist symbol, retrains the models and stores a new analysis in ChromaDB. Click **Open** to view it.
 - **If the computer was off**, the next start catches up on the missed days automatically.
-- **Caching:** downloaded files are cached in `backend/data/bhavcopy/`, so the first 1-year backfill takes a few minutes (~250 files, fetched politely) and adding more symbols later is instant.
+- **Caching:** downloaded files are cached in `nse-analyzer-data/bhavcopy/`, so the first 1-year backfill takes a few minutes (~250 files, fetched politely) and adding more symbols later is instant.
 
 Sources used (public NSE archives):
 
@@ -91,6 +131,12 @@ python scripts/daily_sync.py                      # sync the watchlist once
 python scripts/daily_sync.py --add RELIANCE TCS   # add symbols, then sync
 ```
 
+**Analysing data you've already fetched:**
+- **Open** shows the last saved analysis for a symbol.
+- **Analyse** re-runs the full analysis (indicators, ML, patterns, memory) on the stored data without downloading anything.
+- **Analyse all** does that for every watchlist symbol.
+- The API equivalent is `POST /api/analyze-stored/{symbol}`.
+
 Settings: `AUTO_SYNC=false` turns the schedule off. `AUTO_SYNC_TIME=19:15` changes the time. `AUTO_SYNC_ON_START=false` skips the catch-up at startup.
 
 ### Daily workflow with manual CSV uploads
@@ -101,7 +147,7 @@ Settings: `AUTO_SYNC=false` turns the schedule off. `AUTO_SYNC_TIME=19:15` chang
 
 Also works with **index files** (NIFTY 50, NIFTY BANK… from the NSE indices historical page) and with the **full-market bhavcopy**: if a file contains many stocks, type the symbol and only that stock is used.
 
-**Tip:** keep "Merge with stored history" ticked. Each upload is merged into `backend/data/history/<SYMBOL>_daily.csv`, so the training set grows and you can upload just the latest few weeks next time.
+**Tip:** keep "Merge with stored history" ticked. Each upload is merged into `nse-analyzer-data/history/<SYMBOL>_daily.csv`, so the training set grows and you can upload just the latest few weeks next time.
 
 ## How the pieces fit
 
@@ -128,6 +174,7 @@ Also works with **index files** (NIFTY 50, NIFTY BANK… from the NSE indices hi
 | DELETE | `/api/watchlist/{symbol}` | Stop tracking a symbol |
 | POST | `/api/sync` | Run the bhavcopy sync now (optionally `{"symbols": [...]}`) |
 | GET | `/api/sync/status` | Progress + log of the current/last sync |
+| POST | `/api/analyze-stored/{symbol}` | Re-run analysis on stored data (no download) |
 | GET | `/api/results/{symbol}` | Latest saved full analysis |
 | GET | `/api/health` | Status, embedding backend, stored count |
 
@@ -137,7 +184,7 @@ Interactive docs: http://localhost:8000/docs
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NSE_DATA_DIR` | `backend/data` | Where history, models and ChromaDB live |
+| `NSE_DATA_DIR` | `~/nse-analyzer-data` | Where history, models and ChromaDB live |
 | `EMBEDDING_BACKEND` | auto | Force `sentence_transformers`, `onnx` or `hashing` |
 | `CHART_BARS` | 750 | Bars sent to the UI |
 | `CORS_ORIGINS` | localhost:5173 | Allowed UI origins |
@@ -155,4 +202,3 @@ This writes `Quote-Equity-DEMO-EQ-sample.csv` in NSE's exact format. Upload it i
 ## A note on expectations
 
 Daily stock direction is close to a coin flip; a model with 52–56% walk-forward accuracy is doing well, and many stocks will show no edge at all. The app shows that honestly rather than hiding it. Use the analysis as one input alongside your own research and risk management.
-# stock-analyzer

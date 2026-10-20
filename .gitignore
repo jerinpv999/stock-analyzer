@@ -1,0 +1,44 @@
+# ---------------- Python virtual environments (any folder level)
+.venv/
+venv/
+env/
+**/.venv/
+**/venv/
+
+# ---------------- Python cache / build
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# ---------------- App data (normally lives in ~/nse-analyzer-data, but never commit it)
+backend/data/
+nse-analyzer-data/
+*.joblib
+chroma_db/
+
+# ---------------- Node / React frontend
+node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+.vite/
+
+# ---------------- Secrets / local settings
+.env
+.env.*
+!.env.example
+
+# ---------------- Editors & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---------------- Sample/test CSVs you download (remove this line if you want to commit them)
+Quote-Equity-*.csv

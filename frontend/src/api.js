@@ -12,11 +12,12 @@ async function handle(res) {
   return res.json()
 }
 
-export function analyzeCsv(file, symbol, merge) {
+export function analyzeCsv(file, symbol, merge, ephemeral = false) {
   const fd = new FormData()
   fd.append('file', file)
   if (symbol) fd.append('symbol', symbol)
   fd.append('merge', merge ? 'true' : 'false')
+  if (ephemeral) fd.append('ephemeral', 'true')
   return fetch(`${BASE}/api/analyze`, { method: 'POST', body: fd }).then(handle)
 }
 
@@ -37,3 +38,5 @@ export const removeWatchlist = (symbol) =>
 export const syncNow = (symbols) => fetch(`${BASE}/api/sync`, json('POST', symbols ? { symbols } : {})).then(handle)
 export const getSyncStatus = () => fetch(`${BASE}/api/sync/status`).then(handle)
 export const getResult = (symbol) => fetch(`${BASE}/api/results/${encodeURIComponent(symbol)}`).then(handle)
+export const analyzeStored = (symbol) =>
+  fetch(`${BASE}/api/analyze-stored/${encodeURIComponent(symbol)}`, { method: 'POST' }).then(handle)

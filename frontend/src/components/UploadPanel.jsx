@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-export default function UploadPanel({ onAnalyze, loading }) {
+export default function UploadPanel({ onAnalyze, onSample, loading }) {
   const [file, setFile] = useState(null)
   const [symbol, setSymbol] = useState('')
   const [merge, setMerge] = useState(true)
@@ -15,7 +15,7 @@ export default function UploadPanel({ onAnalyze, loading }) {
   }
 
   return (
-    <section className="panel upload">
+    <section className="panel upload" data-tour="upload">
       <div
         className={`dropzone ${drag ? 'drag' : ''} ${file ? 'has-file' : ''}`}
         onClick={() => input.current?.click()}
@@ -45,6 +45,9 @@ export default function UploadPanel({ onAnalyze, loading }) {
           <input type="checkbox" checked={merge} onChange={(e) => setMerge(e.target.checked)} />
           Merge with stored history (grows training data)
         </label>
+        <button className="ghost" data-tour="sample" disabled={loading} onClick={onSample} title="Analyse a bundled demo file (not saved to your history)">
+          Try sample data
+        </button>
         <button className="primary" disabled={!file || loading} onClick={() => onAnalyze(file, symbol, merge)}>
           {loading ? 'Analysing…' : 'Analyse'}
         </button>

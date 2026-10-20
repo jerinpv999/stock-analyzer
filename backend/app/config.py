@@ -1,8 +1,42 @@
+import logging
 import os
+import shutil
+from datetime import datetime
 from pathlib import Path
 
+log = logging.getLogger("nse.config")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("NSE_DATA_DIR", BASE_DIR / "data"))
+
+# All your data (price history, watchlist, models, ChromaDB, bhavcopy cache) lives OUTSIDE
+# the project folder, so replacing the code with a new zip never touches it.
+#   Default: ~/nse-analyzer-data   (Linux/macOS: /home/<you>/nse-analyzer-data,
+#                                   Windows: C:\Users\<you>\nse-analyzer-data)
+#   Override: set NSE_DATA_DIR=/any/folder
+DEFAULT_DATA_DIR = Path.home() / "nse-analyzer-data"
+DATA_DIR = Path(os.getenv("NSE_DATA_DIR") or DEFAULT_DATA_DIR).expanduser().resolve()
+LEGACY_DATA_DIR = BASE_DIR / "data"  # where older versions stored data
+
+
+def _has_files(p: Path) -> bool:
+    return p.is_dir() and any(p.iterdir())
+
+
+def _migrate_legacy_data() -> None:
+    """One-time copy of backend/data (older versions) into the new external folder."""
+    if DATA_DIR == LEGACY_DATA_DIR.resolve() or not _has_files(LEGACY_DATA_DIR) or _has_files(DATA_DIR):
+        return
+    shutil.copytree(LEGACY_DATA_DIR, DATA_DIR, dirs_exist_ok=True)
+    (LEGACY_DATA_DIR / "MOVED_TO.txt").write_text(
+        f"On {datetime.now():%Y-%m-%d %H:%M} this data was copied to:\n{DATA_DIR}\n\n"
+        "The app now uses that folder. Once you've checked everything is there, "
+        "you can delete this old backend/data folder.\n"
+    )
+    log.warning("Copied existing data from %s to %s", LEGACY_DATA_DIR, DATA_DIR)
+
+
+_migrate_legacy_data()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 HISTORY_DIR = DATA_DIR / "history"      # merged price history per symbol (training data grows each upload)
 MODEL_DIR = DATA_DIR / "models"         # trained models per symbol + horizon
 CHROMA_DIR = DATA_DIR / "chroma_db"     # ChromaDB persistent store for analysis summaries

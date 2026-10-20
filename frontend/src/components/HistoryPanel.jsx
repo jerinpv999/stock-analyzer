@@ -34,7 +34,7 @@ export default function HistoryPanel({ initialSymbol }) {
   return (
     <div className="stack">
       {err && <div className="error">{err}</div>}
-      <section className="panel">
+      <section className="panel" data-tour="hist-stored">
         <div className="panel-head">
           <h3>Stored analyses</h3>
           <div className="row">
@@ -87,7 +87,7 @@ export default function HistoryPanel({ initialSymbol }) {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel" data-tour="hist-search">
         <h3>Semantic search across all analyses</h3>
         <form className="row" onSubmit={(e) => { e.preventDefault(); searchMemory(q).then(setHits).catch((x) => setErr(x.message)) }}>
           <input className="grow" value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. oversold bounce near support with bullish engulfing" />

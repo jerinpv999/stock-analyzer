@@ -170,14 +170,16 @@ def pattern_stats(df: pd.DataFrame, pats: pd.DataFrame) -> list[dict]:
 
 def recent_occurrences(df: pd.DataFrame, pats: pd.DataFrame, bars: int) -> list[dict]:
     """Directional patterns within the charted window (for markers)."""
-    tail = pats[DIRECTIONAL].tail(bars)
     c = df["close"]
+    n = len(df)
+    start = max(0, n - bars)
     out = []
-    for ts, row in tail.iterrows():
+    for pos in range(start, n):  # positional, so duplicate timestamps can never break this
+        row = pats.iloc[pos]
+        ts = pats.index[pos]
         hits = [k for k in DIRECTIONAL if row[k]]
         if not hits:
             continue
-        pos = df.index.get_loc(ts)
         after = c.iloc[pos + PATTERN_HORIZON] if pos + PATTERN_HORIZON < len(c) else None
         net = sum(BIAS[k] for k in hits)
         out.append({

@@ -186,6 +186,20 @@ def load_csv(raw: bytes, filename: str | None = None, symbol: str | None = None)
     return out[["open", "high", "low", "close", "volume"] + (["vwap_src"] if "vwap_src" in out else [])], meta
 
 
+def clean_index(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per timestamp, sorted. Duplicate dates can arrive when two downloaded files
+    carry the same trade date, or when an upload overlaps stored history."""
+    df.index = pd.to_datetime(df.index, errors="coerce")
+    df = df[df.index.notna()]
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+    df.index.name = "date"
+    return df
+
+
+def read_history(path) -> pd.DataFrame:
+    return clean_index(pd.read_csv(path, index_col=0))
+
+
 def _history_path(symbol: str, intraday: bool) -> Path:
     return HISTORY_DIR / f"{re.sub(r'[^A-Z0-9&_-]', '_', symbol)}_{'intraday' if intraday else 'daily'}.csv"
 
@@ -198,12 +212,7 @@ def history_is_intraday(symbol: str) -> bool:
 def merge_history(df: pd.DataFrame, symbol: str, intraday: bool) -> tuple[pd.DataFrame, int]:
     """Merge the upload into the stored history for this symbol so the training set grows over time."""
     path = _history_path(symbol, intraday)
-    if path.exists():
-        old = pd.read_csv(path, index_col=0, parse_dates=True)
-        old.index.name = "date"
-        combined = pd.concat([old, df])
-        combined = combined[~combined.index.duplicated(keep="last")].sort_index()
-    else:
-        combined = df
+    combined = pd.concat([read_history(path), df]) if path.exists() else df.copy()
+    combined = clean_index(combined)
     combined.to_csv(path)
     return combined, int(len(combined))

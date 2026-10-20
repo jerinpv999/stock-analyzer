@@ -14,8 +14,9 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import analysis as A
-from .config import CHART_BARS, CORS_ORIGINS, RESULTS_DIR
-from .data_loader import DataError, history_is_intraday, load_csv, merge_history
+from .config import CHART_BARS, CORS_ORIGINS, DATA_DIR, RESULTS_DIR
+from .data_loader import (DataError, _history_path, clean_index, history_is_intraday, load_csv,
+                          merge_history, read_history)
 from .indicators import add_all
 from .memory import AnalysisMemory, evaluate_past_calls
 from .model import HORIZONS, train_and_predict
@@ -124,13 +125,19 @@ def compare_with_previous(prev: dict | None, close: float, tfs: dict) -> dict | 
 @app.get("/api/health")
 def health():
     m = memory()
-    return {"status": "ok", "embedding_backend": m.backend, "stored_analyses": m.col.count()}
+    return {"status": "ok", "embedding_backend": m.backend, "stored_analyses": m.col.count(),
+            "data_dir": str(DATA_DIR)}
 
 
 @app.post("/api/analyze")
-def analyze(file: UploadFile = File(...), symbol: str | None = Form(None), merge: str | None = Form(None)):
+def analyze(file: UploadFile = File(...), symbol: str | None = Form(None), merge: str | None = Form(None),
+            ephemeral: str | None = Form(None)):
     # parsed by hand: some FastAPI versions turn a missing bool form field into False instead of the default
     merge = (merge or "true").strip().lower() not in ("false", "0", "no", "off")
+    # ephemeral = demo/sample run: analyse but save nothing (no history, memory or results)
+    ephemeral = (ephemeral or "").strip().lower() in ("true", "1", "yes")
+    if ephemeral:
+        merge = False
     raw = file.file.read()
     if len(raw) > 50 * 1024 * 1024:
         raise HTTPException(413, "File too large (max 50MB).")
@@ -154,6 +161,7 @@ def analyze(file: UploadFile = File(...), symbol: str | None = Form(None), merge
             f"Only {len(df)} bars available for {sym}. Upload at least 30 sessions of history first "
             "(1 year recommended); after that, daily uploads of a single day are merged automatically.",
         )
+    meta["ephemeral"] = ephemeral
     return run_analysis(df, meta)
 
 
@@ -168,6 +176,7 @@ def _run_analysis(df: pd.DataFrame, meta: dict) -> dict:
     sym, intraday = meta["symbol"], meta["is_intraday"]
     meta.setdefault("rows_total", len(df))
     meta.setdefault("rows_uploaded", len(df))
+    df = clean_index(df)  # defensive: indicators and patterns assume unique, sorted dates
     meta["first_date"] = df.index[0].isoformat()
     ind = add_all(df, intraday)
     latest = ind.iloc[-1]
@@ -235,7 +244,7 @@ def _run_analysis(df: pd.DataFrame, meta: dict) -> dict:
         store_meta["pattern_direction"] = pred["direction"]
         store_meta["pattern_prob_up"] = pred["prob_up"]
         store_meta["patterns_today"] = ", ".join(t["name"] for t in pattern["today"])
-    analysis_id = mem.store(summary, store_meta)
+    analysis_id = None if meta.get("ephemeral") else mem.store(summary, store_meta)
 
     resp = {
         "analysis_id": analysis_id,
@@ -261,7 +270,8 @@ def _run_analysis(df: pd.DataFrame, meta: dict) -> dict:
     }
     out = clean(resp)
     try:
-        (RESULTS_DIR / f"{safe_name(sym)}.json").write_text(json.dumps(out))
+        if not meta.get("ephemeral"):
+            (RESULTS_DIR / f"{safe_name(sym)}.json").write_text(json.dumps(out))
     except Exception as e:  # noqa: BLE001
         log.warning("could not save result for %s: %s", sym, e)
     return out
@@ -341,6 +351,24 @@ def sync_now(payload: dict = Body(default={})):
 @app.get("/api/sync/status")
 def sync_status():
     return S.JOB.status()
+
+
+@app.post("/api/analyze-stored/{symbol}")
+def analyze_stored(symbol: str):
+    """Re-run the full analysis on price history already stored for a symbol (from sync or uploads)."""
+    sym = symbol.strip().upper()
+    for intraday in (False, True):
+        path = _history_path(sym, intraday)
+        if path.exists():
+            break
+    else:
+        raise HTTPException(404, f"No stored data for {sym}. Sync it from the Watchlist or upload a CSV first.")
+    with ANALYSIS_LOCK:
+        df = read_history(path)
+    if len(df) < 30:
+        raise HTTPException(400, f"Only {len(df)} sessions stored for {sym}; need at least 30.")
+    return run_analysis(df, {"symbol": sym, "is_intraday": intraday, "rows_uploaded": 0,
+                             "rows_total": len(df), "source": "stored"})
 
 
 @app.get("/api/results/{symbol}")

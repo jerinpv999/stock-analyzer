@@ -47,7 +47,7 @@ export default function IndicatorCharts({ data, intraday }) {
   const x = <XAxis dataKey="date" tick={axis} minTickGap={40} tickLine={false} axisLine={false} />
 
   return (
-    <section className="panel">
+    <section className="panel" data-tour="indicators">
       <div className="panel-head">
         <h3>Indicators</h3>
         <div className="seg">

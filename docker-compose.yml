@@ -1,0 +1,35 @@
+# NSE Stock Analyzer — run everything with:   docker compose up -d --build
+# Then open http://localhost:8080   (API docs: http://localhost:8000/docs)
+#
+# Your data stays on the host in ~/nse-analyzer-data (same folder the non-Docker
+# version uses), so you can switch between Docker and a local run freely.
+# Change it with NSE_DATA_HOST_DIR in a .env file next to this one.
+
+services:
+  backend:
+    build: ./backend
+    image: nse-analyzer-backend
+    restart: unless-stopped
+    # run as your user so files in ~/nse-analyzer-data stay editable outside Docker
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      NSE_DATA_DIR: /data
+      HOME: /data/.home            # embedding-model cache persists across restarts
+      TZ: Asia/Kolkata
+      AUTO_SYNC: "${AUTO_SYNC:-true}"
+      AUTO_SYNC_TIME: "${AUTO_SYNC_TIME:-18:45}"
+      AUTO_SYNC_ON_START: "${AUTO_SYNC_ON_START:-true}"
+    volumes:
+      - ${NSE_DATA_HOST_DIR:-~/nse-analyzer-data}:/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    image: nse-analyzer-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-8080}:80"

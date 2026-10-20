@@ -47,7 +47,7 @@ export default function TimeframeCard({ tfKey, tf }) {
         <p className="tiny muted">ML: {ml.reason}</p>
       )}
 
-      <div className="plan">
+      <div className="plan" data-tour="plan">
         <div className="plan-row"><span>Bias</span><b className={p.bias === 'long' ? 'up' : p.bias === 'short' ? 'down' : ''}>{p.bias.toUpperCase()}</b></div>
         <div className="plan-row"><span>Entry</span><b>₹{fmt(p.entry)}</b></div>
         <div className="plan-row"><span>Stop-loss</span><b className="down">₹{fmt(p.stop_loss)}</b></div>
@@ -58,7 +58,7 @@ export default function TimeframeCard({ tfKey, tf }) {
         {tf.annualized_volatility_pct != null && <p className="tiny muted">Annualised volatility: {tf.annualized_volatility_pct}%</p>}
       </div>
 
-      <button className="link" onClick={() => setOpen(!open)}>
+      <button className="link" data-tour="signals" onClick={() => setOpen(!open)}>
         {open ? 'Hide' : 'Show'} {tf.signals.length} signals
       </button>
       {open && (

@@ -102,7 +102,7 @@ export default function PriceChart({ data, levels, intraday, patterns = [] }) {
   const last = hover || data[data.length - 1]
   const patternsByDate = new Map(patterns.map((p) => [p.date, p.patterns]))
   return (
-    <section className="panel">
+    <section className="panel" data-tour="price-chart">
       <div className="panel-head">
         <h3>Price chart</h3>
         <div className="legend">

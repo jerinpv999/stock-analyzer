@@ -9,7 +9,7 @@ export default function LevelsPanel({ levels, close, timeframes }) {
     .map(([k, t]) => ({ name: TF_LABELS[k].title, prob: +(t.ml.prob_up * 100).toFixed(1) }))
 
   return (
-    <section className="panel grid3">
+    <section className="panel grid3" data-tour="levels">
       <div>
         <h3>Pivots & CPR <span className="muted tiny">(next session)</span></h3>
         <table className="tbl">

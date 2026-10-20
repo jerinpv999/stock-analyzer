@@ -195,3 +195,29 @@ details summary { cursor: pointer; color: var(--accent); }
 .wl-pat { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl-actions { white-space: nowrap; text-align: right; }
 .wl-actions button { padding: 3px 9px; margin-left: 4px; }
+button.primary.sm { padding: 3px 10px; font-weight: 600; }
+
+/* guided tour */
+.tour { position: fixed; inset: 0; z-index: 1000; pointer-events: none; }
+.tour-dim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); pointer-events: auto; }
+.tour-spot {
+  position: fixed; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--accent);
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+}
+.tour-card {
+  position: fixed; pointer-events: auto; width: min(380px, calc(100vw - 24px));
+  background: var(--surface); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  transition: top .25s ease, left .25s ease;
+}
+.tour-card.center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.tour-card.pinned { left: 12px; right: 12px; bottom: 12px; width: auto; }
+.tour-card h3 { margin: 2px 0 6px; font-size: 16px; }
+.tour-card p { color: var(--text-secondary); margin: 0 0 10px; }
+.tour-card > button.primary { margin-bottom: 10px; }
+.tour-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-dots { display: flex; gap: 4px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+.tour-dots i.on { background: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .tour-spot, .tour-card { transition: none; } }
