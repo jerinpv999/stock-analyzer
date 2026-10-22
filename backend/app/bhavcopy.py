@@ -83,6 +83,9 @@ def parse_equity_udiff(raw: bytes) -> pd.DataFrame:
     })
     turnover = _num(df["TtlTrfVal"]) if "TtlTrfVal" in df else np.nan
     out["vwap_src"] = turnover / out["volume"].replace(0, np.nan)
+    # extra columns used by the market briefing (breadth, top movers); ignored by per-symbol history
+    out["prev_close"] = _num(df["PrvsClsgPric"]) if "PrvsClsgPric" in df else np.nan
+    out["turnover"] = turnover  # rupees
     return out.dropna(subset=["date", "close"])
 
 
@@ -97,6 +100,8 @@ def parse_equity_full(raw: bytes) -> pd.DataFrame:
         "open": _num(df["OPEN_PRICE"]), "high": _num(df["HIGH_PRICE"]), "low": _num(df["LOW_PRICE"]),
         "close": _num(df["CLOSE_PRICE"]), "volume": _num(df["TTL_TRD_QNTY"]),
         "vwap_src": _num(df["AVG_PRICE"]) if "AVG_PRICE" in df else np.nan,
+        "prev_close": _num(df["PREV_CLOSE"]) if "PREV_CLOSE" in df else np.nan,
+        "turnover": _num(df["TURNOVER_LACS"]) * 1e5 if "TURNOVER_LACS" in df else np.nan,
     })
     return out.dropna(subset=["date", "close"])
 
@@ -119,6 +124,7 @@ def parse_index(raw: bytes) -> pd.DataFrame:
         "date": pd.to_datetime(col("index date").str.strip(), dayfirst=True, errors="coerce"),
         "open": _num(col("open")), "high": _num(col("high")), "low": _num(col("low")),
         "close": close, "volume": _num(col("volume")),
+        "pct_change": _num(col("change(%)")), "pe": _num(col("p/e")),
     })
     for k in ("open", "high", "low"):
         out[k] = out[k].fillna(out["close"])

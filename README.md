@@ -1,14 +1,22 @@
 # NSE Stock Analyzer
 
-Upload an NSE historical-price CSV for any stock and get:
+The app opens on a **Morning briefing** of world and Indian markets, ready before 08:30 IST. For any stock you upload or track, it adds:
 
 - **Technical analysis for three timeframes** — Day trading (next session), Short term (1–4 week swing), Long term (positional) — each with a verdict, a score from −100 to +100, the individual signals behind it, and a trade plan (entry, stop-loss, targets, risk:reward).
 - **An ML model trained on that stock's own history** — a gradient-boosted classifier per horizon (1 / 5 / 20 sessions) predicting the probability the price will be higher. It is validated walk-forward, and its accuracy is shown next to a "always guess the majority" baseline, so you can see whether it actually has an edge.
 - **Candlestick pattern model** — detects 22 one-, two- and three-candle patterns (Hammer, Engulfing, Harami, Morning/Evening Star, Three White Soldiers, Tweezers, Doji family…) on every bar, shows how each pattern actually performed on this stock, and predicts the chance today's pattern works out over the next 3 sessions. The prediction blends the stock's own pattern history with a model trained on pattern events pooled from every stock you've uploaded. Patterns are marked on the chart.
 - **Charts** — candlesticks with SMA/EMA/VWAP/Bollinger/Supertrend overlays, support/resistance lines and volume; RSI, MACD, Stochastic and ADX panels; a model-probability chart.
+- **Morning briefing (main page)** — built automatically every weekday at 08:15 IST, before the 09:15 open, with a weekly recap every Saturday. It covers:
+  - world indices, commodities, currencies and yields (Yahoo Finance);
+  - Indian benchmarks, sectors, market breadth, top movers and an **all-NSE-index summary**;
+  - India and world news summaries (CNBC-TV18, CNBC, Yahoo Finance);
+  - today's and this week's stock events (results, dividends, splits, bonus from NSE);
+  - a pre-market model's chance that the Nifty opens and closes higher.
+
+  All summarising and modelling runs offline on your machine; the internet is used only to download data.
 - **Memory in ChromaDB** — every analysis summary is embedded and stored. The next analysis of the same stock shows what changed since last time, checks whether earlier Bullish/Bearish calls came true, surfaces similar setups in other stocks, and supports semantic search over all past analyses.
 
-> Educational tool only — not investment advice and not a SEBI-registered research recommendation.
+> **For educational purposes only.** Not investment advice or a recommendation, and not from a SEBI-registered investment adviser or research analyst. Automated analysis can be wrong. 9 out of 10 individual traders in equity F&O incurred net losses (SEBI study, January 2023). The app shows this notice every time it's opened, and keeps it in the header and footer.
 
 > 📘 Full user guide: [`docs/NSE-Stock-Analyzer-User-Guide.pdf`](docs/NSE-Stock-Analyzer-User-Guide.pdf). The app also has a built-in guided tour: it opens on first visit, and the **Tour** button replays it.
 
@@ -22,9 +30,57 @@ docker compose up -d --build
 Open http://localhost:8080 (API docs: http://localhost:8000/docs).
 
 - **Settings:** copy `.env.example` to `.env` to change the data folder, port, sync time or your user id (`HOST_UID`/`HOST_GID`, so data files stay owned by you).
+- **Your data is stored on your computer, not inside Docker.** `~/nse-analyzer-data` is mounted into the backend as `/data`. It survives `docker compose down`, rebuilds and app updates, and the header shows its real location. To use another disk or folder, set it in `.env` before starting:
+  ```bash
+  NSE_DATA_HOST_DIR=/mnt/storage/nse-analyzer-data   # Linux/macOS
+  NSE_DATA_HOST_DIR=D:/nse-analyzer-data             # Windows (Docker Desktop)
+  ```
+  To move existing data, stop the app (`docker compose down`), copy the old folder to the new place, set `NSE_DATA_HOST_DIR`, then run `docker compose up -d`.
 - **Logs:** `docker compose logs -f backend`.
+- **"Backend not reachable" on the page:** run `docker compose logs backend`. The backend container fixes the data folder's ownership on start (Docker creates a missing `~/nse-analyzer-data` as root), then runs as `HOST_UID`/`HOST_GID` (default 1000 — check yours with `id -u`; set it in `.env` if different). The page keeps retrying every 5 seconds, so it connects as soon as the backend is up.
 - **Updating:** replace the code, then run `docker compose up -d --build`. Your data is untouched.
 - **Auto-restart:** the containers restart automatically, so the 18:45 IST daily sync keeps running.
+
+## Morning briefing (main page)
+
+The **Market** tab is the first thing you see. It has two views.
+
+**Daily briefing** (weekdays, built at 08:15 IST):
+
+| Section | What it shows | Source |
+|---|---|---|
+| Mood tiles | Global cues (overnight US + Asia), news mood for India and the world, and the pre-market model's chance the Nifty opens/closes higher, with "Why?" drivers | computed locally |
+| Summary | A plain-English paragraph of all of the below | computed locally |
+| World markets | S&P 500, Nasdaq, Dow, Russell, VIX, FTSE, DAX, CAC, Euro Stoxx, Nikkei, Hang Seng, Shanghai, KOSPI, Taiwan, ASX, STI, Brent, WTI, gold, silver, USD/INR, dollar index, US 10-year, each with a 1-month trend | Yahoo Finance |
+| Indian markets | Nifty 50, Sensex, Nifty Bank, Midcap, Smallcap, India VIX, sector moves, market breadth (advances vs declines across all NSE stocks), top gainers and losers among liquid stocks | NSE, Yahoo Finance, NSE bhavcopy |
+| All NSE indices | Every NSE index (broad, sectoral, thematic, strategy, fixed income) with change, P/E, 52-week range, advances/declines and 1-year change; filter, search and sort | NSE (falls back to NSE's official daily index file) |
+| Who's buying & selling | FII/FPI and DII buying, selling and net in the cash market (₹ crore, NSE provisional) with a 10-session chart; F&O positions of **Retail (Client), Pro traders, FII and DII**: % of index-futures positions that are long, net index futures, day change, net index calls and puts, net stock futures, plus a 10-session trend | NSE FII/DII data; NSE participant-wise open interest file |
+| Advance / decline | Advances, declines, unchanged and the A/D ratio across all NSE equity stocks; stocks up or down 4%+; net breadth over the last 10 sessions; advances vs declines inside each index | NSE bhavcopy; NSE index snapshot |
+| News summary | Stories from the last 30 hours, de-duplicated across sources, grouped into themes, scored for sentiment, with "stocks in the news" (★ = on your watchlist) | CNBC-TV18, CNBC, Yahoo Finance RSS |
+| Stock events | Today's and the next 7 days' board meetings (results, dividends, fund raising) and ex-dates (dividend, bonus, split); watchlist stocks starred | NSE event calendar and corporate actions |
+
+**Weekly recap** (Saturday 09:00 IST):
+- the week's change for world and Indian indices, sectors and every NSE index;
+- news mood by day and recurring themes of the week;
+- how the pre-market calls did against the actual open;
+- FII/DII net for the week and the change in each participant's F&O positions;
+- advance/decline for each session;
+- the week ahead's results and corporate actions.
+
+Other ways to get a briefing:
+- **Refresh now** rebuilds the briefing on demand.
+- The date picker opens earlier briefings.
+- If the computer was off at 08:15, the briefing is built when the backend next starts.
+
+**How the offline models work** (no cloud AI, no API keys):
+
+- **Sentiment:** a finance-tuned word list with phrase and negation rules ("misses estimates", "not higher"). For a stronger model, `SENTIMENT_BACKEND=finbert` (with `pip install transformers torch`) switches to FinBERT. It downloads once, then runs locally.
+- **De-duplication and themes:** TF-IDF similarity merges the same story from several sources. Hierarchical clustering then groups stories into themes, labelled by subject (companies, places, policy) rather than by movement words like "rises".
+- **Key stories:** chosen with TextRank, an extractive summary that picks the most central headlines.
+- **Company linking:** headlines are matched to NSE symbols using NSE's equity list plus curated aliases (e.g. "Zomato" → ETERNAL).
+- **Pre-market outlook:** a logistic regression trained on about 5 years of history. It learns P(Nifty opens higher) and P(Nifty closes higher) from the previous session's moves in US, European and Asian indices, crude, gold, the dollar, USD/INR and US yields. It is validated walk-forward against a naive baseline. The page always shows the tested accuracy and whether the model has an edge, and probabilities are capped at 1–99%.
+
+Briefings are saved in `~/nse-analyzer-data/briefings/` (daily and weekly JSON), and raw downloads are cached for 10 days in `market_cache/`. A source that fails (NSE often blocks automated requests) never breaks the briefing: the "sources" line at the bottom of the page shows what loaded and what didn't.
 
 ## Using it with Claude
 
@@ -176,6 +232,11 @@ Also works with **index files** (NIFTY 50, NIFTY BANK… from the NSE indices hi
 | GET | `/api/sync/status` | Progress + log of the current/last sync |
 | POST | `/api/analyze-stored/{symbol}` | Re-run analysis on stored data (no download) |
 | GET | `/api/results/{symbol}` | Latest saved full analysis |
+| GET | `/api/briefing/latest` | Latest daily briefing + weekly recap, build status and schedule |
+| GET | `/api/briefing/list` | Dates of stored daily briefings and weekly recaps |
+| GET | `/api/briefing/daily/{YYYY-MM-DD}` · `/api/briefing/weekly/{monday}` | A specific stored briefing |
+| POST | `/api/briefing/refresh` | Build now: `{"kind": "daily"}` or `{"kind": "weekly"}` |
+| GET | `/api/briefing/status` | Progress of the current/last build |
 | GET | `/api/health` | Status, embedding backend, stored count |
 
 Interactive docs: http://localhost:8000/docs
@@ -187,6 +248,10 @@ Interactive docs: http://localhost:8000/docs
 | `NSE_DATA_DIR` | `~/nse-analyzer-data` | Where history, models and ChromaDB live |
 | `EMBEDDING_BACKEND` | auto | Force `sentence_transformers`, `onnx` or `hashing` |
 | `CHART_BARS` | 750 | Bars sent to the UI |
+| `AUTO_BRIEFING` | true | Build the morning briefing and weekly recap automatically |
+| `BRIEFING_TIME` | 08:15 | Daily briefing time (IST, Mon–Fri) — keep it before 08:30 |
+| `WEEKLY_TIME` | 09:00 | Weekly recap time (IST, Saturday) |
+| `SENTIMENT_BACKEND` | lexicon | `finbert` for the optional local FinBERT model |
 | `CORS_ORIGINS` | localhost:5173 | Allowed UI origins |
 | `VITE_API_URL` (frontend) | empty | Backend URL when not using the dev proxy |
 

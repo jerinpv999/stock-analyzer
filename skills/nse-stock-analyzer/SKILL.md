@@ -1,6 +1,6 @@
 ---
 name: nse-stock-analyzer
-description: Operate the local NSE Stock Analyzer app through its REST API: add Indian stocks or indices to the watchlist, sync daily NSE bhavcopy data, run technical/ML/candlestick analysis, read results and search past analyses. Use when the user asks to analyse an NSE stock or index, check their watchlist, run or troubleshoot a sync, or compare past calls.
+description: Operate the local NSE Stock Analyzer app through its REST API: read the morning market briefing and weekly recap (world + Indian indices, all NSE indices, news summaries, stock events, pre-market outlook), add Indian stocks or indices to the watchlist, sync daily NSE bhavcopy data, run technical/ML/candlestick analysis, read results and search past analyses. Use when the user asks how the market looks today or this week, asks to analyse an NSE stock or index, check their watchlist, run or troubleshoot a sync, or compare past calls.
 ---
 
 # NSE Stock Analyzer
@@ -28,6 +28,37 @@ curl -s http://localhost:8000/api/health
 Do not start long-running servers yourself unless the user asks.
 
 ## 2. Core workflows
+
+### "How does the market look today?" → the morning briefing
+```bash
+curl -s localhost:8000/api/briefing/latest      # {"daily": {...}, "weekly": {...}, "status": {...}, "schedule": {...}}
+```
+- **Check freshness first.** If `daily.date` isn't today (IST) and it's a weekday after 08:15, or the user wants it rebuilt, run `POST /api/briefing/refresh` with `{"kind": "daily"}`. Then poll `GET /api/briefing/status` until `status.running` is false; it takes about 1–2 minutes. Use `{"kind": "weekly"}` for the weekly recap.
+- **Key fields:**
+  - `narrative[]`: ready-made plain-English paragraphs; quote these.
+  - `mood.global_cues` and `mood.news`.
+  - `outlook.targets.gap_up` / `close_up`: `{prob_up, cv_accuracy, baseline_accuracy, has_edge, drivers[]}`.
+  - `global[]`: world indices, commodities and FX.
+  - `india.indices[]`, `india.breadth`, `india.gainers`, `india.losers`.
+  - `india.all_indices[]`: every NSE index with `group`, `change_pct`, `pe` and the 52-week range.
+  - `news.regions.{india,world}.themes[]` and `key_stories[]`; `news.stocks_in_news[]` (with a `watchlist` flag).
+  - `events.today[]` / `events.upcoming[]`: board meetings and ex-dates; `watchlist` flags the user's stocks.
+  - `sources[]`: which feeds loaded.
+  - `flows.fii_dii`: `{date, fii:{buy,sell,net}, dii:{...}}` in ₹ crore (provisional; null if NSE blocked it); `flows.fii_dii_history[]`.
+  - `flows.participants.rows[]`: one row each for `CLIENT` (retail), `PRO`, `FII` and `DII`, with:
+    - `index_fut.{long,short,net,long_pct}`;
+    - `index_calls.net`, `index_puts.net`, `stock_fut.net`;
+    - `change.index_fut_net` (vs the previous session);
+    - `flows.participants.trend[]` gives the 10-session history.
+  - `flows.advance_decline.latest`: `{advances, declines, unchanged, ratio, up_4pct, down_4pct}`; also `history[]` (10 sessions) and `by_index[]`.
+- **Weekly fields:** `global[]`, `india[]` and `all_indices[]` with weekly `change_pct`; `themes`; `premarket_calls[]` (how the outlook did); `next_week_events[]`; `flows` (`fii_net`, `dii_net`, `fii_dii_days[]`, `participants` with week change, `advance_decline.history[]`).
+- **When reporting:**
+  - Start or end with "for educational purposes only — not investment advice". The app is not SEBI-registered.
+  - Describe participant positions as a snapshot of the last session, not a forecast.
+  - Lead with the narrative.
+  - Name the user's watchlist stocks that have events or news today.
+  - Say plainly if `outlook...has_edge` is false (the model did not beat a naive guess in testing), and never present `prob_up` as certain.
+  - If a source in `sources[]` has `ok: false`, mention what's missing, e.g. "NSE blocked the events request".
 
 ### Analyse a stock that is (or should be) on the watchlist
 1. `GET /api/watchlist`. If the symbol is listed and has `rows >= 30`, go to step 3.
@@ -105,8 +136,10 @@ memory  {previous{verdict_changes, price_change_pct}, track_record.by_timeframe{
 | Sync log `No bhavcopy for N weekday(s)` | Holidays, or today's file isn't out yet (NSE publishes ~6 pm IST). Normal. |
 | Sync log `Ignored … different date` | NSE served a stale file; it is retried automatically next sync. |
 | Sync log `Download failed … HTTP 403` | NSE blocked the request. Retry later; check internet access from the server. |
+| Briefing `sources` show NSE ✕ | NSE often blocks automated requests; all-index data falls back to the official daily file, but events may be missing. Retry with refresh later. |
+| `daily` is null in `/api/briefing/latest` | No briefing built yet: `POST /api/briefing/refresh` `{"kind":"daily"}`. |
 | `embedding_backend: hashing` in health | ONNX model couldn't download. Search still works, with lower quality. |
 
 ## 6. Configuration
 
-All data lives in `~/nse-analyzer-data`, or wherever `NSE_DATA_DIR` points. The daily auto-sync runs Mon–Fri at `AUTO_SYNC_TIME` (default 18:45 IST) while the server runs. For one-off syncs without the server, run `python scripts/daily_sync.py [--add SYMBOLS]` in `backend/`.
+All data lives in `~/nse-analyzer-data`, or wherever `NSE_DATA_DIR` points. The morning briefing builds Mon–Fri at `BRIEFING_TIME` (default 08:15 IST) and the weekly recap on Saturday at `WEEKLY_TIME` (09:00); `AUTO_BRIEFING=false` turns that off. The daily auto-sync runs Mon–Fri at `AUTO_SYNC_TIME` (default 18:45 IST) while the server runs. For one-off syncs without the server, run `python scripts/daily_sync.py [--add SYMBOLS]` in `backend/`.

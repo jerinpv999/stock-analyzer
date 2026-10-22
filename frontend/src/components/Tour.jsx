@@ -7,10 +7,32 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
   automatically when none is loaded (the "Try sample data" step offers to load one).
 */
 export const TOUR_STEPS = [
-  { tab: 'analyse', title: 'Welcome to NSE Stock Analyzer', center: true,
-    body: 'A quick tour of every screen — about two minutes. Use the arrow keys or the buttons below; press Esc to leave at any time.' },
-  { tab: 'analyse', target: 'tabs', title: 'Three screens',
-    body: 'Analyse shows one stock in depth. Watchlist keeps your stocks updated from NSE automatically. History & search lets you look back over every analysis the app has stored.' },
+  { tab: 'market', title: 'Welcome to NSE Stock Analyzer', center: true,
+    body: 'A quick tour of every screen — about two minutes. Everything here is for educational purposes only, not investment advice. Use the arrow keys or the buttons below; press Esc to leave at any time.' },
+  { tab: 'market', target: 'tabs', title: 'Four screens',
+    body: 'Market is your morning briefing. Analyse shows one stock in depth. Watchlist keeps your stocks updated from NSE automatically. History & search looks back over every stored analysis.' },
+  { tab: 'market', target: 'mk-head', title: 'Morning briefing',
+    body: 'Built automatically every weekday at 08:15 IST, before the market opens — world markets, Indian markets, news and today\'s stock events. Switch to Weekly for the week in review, pick an earlier day, or press Refresh now to rebuild it.' },
+  { tab: 'market', target: 'mk-mood', needsBriefing: true, title: 'The morning in three numbers',
+    body: 'Global cues (how US and Asian markets moved overnight), the mood of the news, and the pre-market model\'s chance that the Nifty opens and closes higher. “Why?” shows which overnight moves pushed the prediction — and the accuracy line tells you whether to trust it.' },
+  { tab: 'market', target: 'mk-summary', needsBriefing: true, title: 'Plain-English summary',
+    body: 'Everything on this page in a few sentences, written by the app itself — no cloud AI.' },
+  { tab: 'market', target: 'mk-global', needsBriefing: true, title: 'World markets',
+    body: 'US, Europe and Asia indices, oil, gold, the dollar, USD/INR and the US 10-year yield from Yahoo Finance, each with its one-month trend. Greyed rows are older data (for example, a market holiday).' },
+  { tab: 'market', target: 'mk-india', needsBriefing: true, title: 'Indian markets',
+    body: 'Benchmarks and sector indices from the last session, market breadth (advances vs declines across all NSE stocks) and the top movers among liquid stocks.' },
+  { tab: 'market', target: 'mk-allidx', needsBriefing: true, title: 'Every NSE index',
+    body: 'The full all-index summary for the last session: broad, sectoral, thematic, strategy and fixed-income indices with change, P/E and where each sits in its 52-week range. Filter by group, search (e.g. “defence”) or show all.' },
+  { tab: 'market', target: 'mk-flows', needsBriefing: true, title: "Who's buying & selling",
+    body: 'FII and DII buying and selling in the cash market (NSE provisional data), and the futures & options positions of Retail (Client), Pro traders, FIIs and DIIs — how much of each group\'s index-futures position is long, net calls and puts, and the change from the previous session.' },
+  { tab: 'market', target: 'mk-ad', needsBriefing: true, title: 'Advance / decline',
+    body: 'How many NSE stocks rose vs fell in the last session, the A/D ratio, net breadth over the last 10 sessions, and advances vs declines inside each index.' },
+  { tab: 'market', target: 'mk-news', needsBriefing: true, title: 'News summary',
+    body: 'Stories from CNBC-TV18, CNBC and Yahoo Finance from the last 30 hours, de-duplicated, grouped into themes and scored positive / negative on your own computer. Every headline links to the original article.' },
+  { tab: 'market', target: 'mk-stocks', needsBriefing: true, title: 'Stocks in the news',
+    body: 'NSE-listed companies mentioned in today\'s news, with their mood. ★ marks your watchlist stocks — click one to see its headlines and jump to its analysis.' },
+  { tab: 'market', target: 'mk-events', needsBriefing: true, title: 'Stock events',
+    body: 'Results, dividends, bonuses and other board meetings and ex-dates from NSE — today and the next seven days, with your watchlist stocks starred.' },
   { tab: 'analyse', target: 'upload', title: 'Upload a CSV',
     body: 'Drop an NSE "Historical Data" CSV here (or an index file such as NIFTY 50). Keep "Merge with stored history" ticked so each upload adds to the training data — after the first year, a one-day file is enough.' },
   { tab: 'analyse', target: 'sample', title: 'No file handy? Use the sample', action: 'sample',
@@ -51,8 +73,8 @@ export const TOUR_STEPS = [
 
 const PAD = 8
 
-export default function Tour({ open, onClose, setTab, hasResult, onLoadSample, loading }) {
-  const steps = TOUR_STEPS.filter((s) => !s.needsResult || hasResult)
+export default function Tour({ open, onClose, setTab, hasResult, hasBriefing, onLoadSample, loading }) {
+  const steps = TOUR_STEPS.filter((s) => (!s.needsResult || hasResult) && (!s.needsBriefing || hasBriefing))
   const [i, setI] = useState(0)
   const [rect, setRect] = useState(null)
   const [missing, setMissing] = useState(false)

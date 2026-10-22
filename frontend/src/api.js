@@ -40,3 +40,10 @@ export const getSyncStatus = () => fetch(`${BASE}/api/sync/status`).then(handle)
 export const getResult = (symbol) => fetch(`${BASE}/api/results/${encodeURIComponent(symbol)}`).then(handle)
 export const analyzeStored = (symbol) =>
   fetch(`${BASE}/api/analyze-stored/${encodeURIComponent(symbol)}`, { method: 'POST' }).then(handle)
+
+// ---- morning market briefing
+export const getBriefingLatest = () => fetch(`${BASE}/api/briefing/latest`).then(handle)
+export const getBriefingList = () => fetch(`${BASE}/api/briefing/list`).then(handle)
+export const getBriefing = (kind, key) => fetch(`${BASE}/api/briefing/${kind}/${key}`).then(handle)
+export const getBriefingStatus = () => fetch(`${BASE}/api/briefing/status`).then(handle)
+export const refreshBriefing = (kind) => fetch(`${BASE}/api/briefing/refresh`, json('POST', { kind })).then(handle)

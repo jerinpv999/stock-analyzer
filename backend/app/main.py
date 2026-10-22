@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import threading
 from datetime import datetime
@@ -36,10 +37,15 @@ def safe_name(sym: str) -> str:
     return re.sub(r"[^A-Za-z0-9&_-]", "_", sym)
 
 
+_memory_lock = threading.Lock()
+
+
 def memory() -> AnalysisMemory:
     global _memory
     if _memory is None:
-        _memory = AnalysisMemory()
+        with _memory_lock:  # startup warm-up and the first request must not both build it
+            if _memory is None:
+                _memory = AnalysisMemory()
     return _memory
 
 
@@ -124,9 +130,23 @@ def compare_with_previous(prev: dict | None, close: float, tfs: dict) -> dict | 
 
 @app.get("/api/health")
 def health():
-    m = memory()
-    return {"status": "ok", "embedding_backend": m.backend, "stored_analyses": m.col.count(),
-            "data_dir": str(DATA_DIR)}
+    """Answers instantly — loading the ChromaDB embedding model (first start downloads it) happens in the background."""
+    host_dir = os.getenv("NSE_DATA_DIR_ON_HOST")  # set by docker-compose: the real folder on the host
+    out = {"status": "ok", "data_dir": host_dir or str(DATA_DIR), "in_docker": bool(host_dir),
+           "memory_ready": _memory is not None}
+    if _memory is not None:
+        out.update(embedding_backend=_memory.backend, stored_analyses=_memory.col.count())
+    return out
+
+
+@app.on_event("startup")
+def _warm_memory():
+    def warm():
+        try:
+            memory()
+        except Exception:  # noqa: BLE001
+            log.exception("ChromaDB memory failed to start")
+    threading.Thread(target=warm, name="memory-warmup", daemon=True).start()
 
 
 @app.post("/api/analyze")
@@ -265,8 +285,9 @@ def _run_analysis(df: pd.DataFrame, meta: dict) -> dict:
             "total_past_analyses": len(past),
         },
         "chart": chart_payload(ind, intraday),
-        "disclaimer": "Educational technical analysis only — not investment advice. "
-                      "Not a SEBI-registered research recommendation.",
+        "disclaimer": "For educational purposes only — not investment advice or a recommendation. "
+                      "Not from a SEBI-registered investment adviser or research analyst. "
+                      "Automated analysis can be wrong; consult a SEBI-registered adviser before investing.",
     }
     out = clean(resp)
     try:
@@ -377,3 +398,65 @@ def latest_result(symbol: str):
     if not path.exists():
         raise HTTPException(404, f"No saved analysis for {symbol.upper()} yet.")
     return json.loads(path.read_text())
+
+
+# ---------------------------------------------------------------- morning market briefing
+
+from .market import briefing as MB  # noqa: E402
+from .market import scheduler as MS  # noqa: E402
+
+
+@app.on_event("startup")
+def _start_briefing_scheduler():
+    MS.start()
+
+
+def _slim(b: dict | None) -> dict | None:
+    """Drop the raw news list (kept on disk for the weekly recap) from API responses."""
+    if not b:
+        return b
+    if b.get("kind") == "daily":
+        b = {**b, "news": {k: v for k, v in b["news"].items() if k != "all_items"}}
+    return clean(b)
+
+
+@app.get("/api/briefing/latest")
+def briefing_latest():
+    return {"daily": _slim(MB.load("daily")), "weekly": _slim(MB.load("weekly")),
+            "status": MS.JOB.status(), "schedule": MS.info()}
+
+
+@app.get("/api/briefing/list")
+def briefing_list():
+    return {"daily": MB.list_saved("daily"), "weekly": MB.list_saved("weekly")}
+
+
+@app.get("/api/briefing/daily/{day}")
+def briefing_daily(day: str):
+    b = MB.load("daily", day)
+    if not b:
+        raise HTTPException(404, f"No daily briefing for {day}.")
+    return _slim(b)
+
+
+@app.get("/api/briefing/weekly/{monday}")
+def briefing_weekly(monday: str):
+    b = MB.load("weekly", monday)
+    if not b:
+        raise HTTPException(404, f"No weekly recap for the week of {monday}.")
+    return _slim(b)
+
+
+@app.post("/api/briefing/refresh")
+def briefing_refresh(payload: dict = Body(default={})):
+    kind = payload.get("kind", "daily")
+    if kind not in ("daily", "weekly"):
+        raise HTTPException(400, "kind must be 'daily' or 'weekly'")
+    if not MS.JOB.start(kind, trigger="manual"):
+        raise HTTPException(409, "A briefing is already being built.")
+    return {"started": True, "kind": kind}
+
+
+@app.get("/api/briefing/status")
+def briefing_status():
+    return {"status": MS.JOB.status(), "schedule": MS.info()}

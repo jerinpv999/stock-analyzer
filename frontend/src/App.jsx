@@ -9,29 +9,51 @@ import MemoryPanel from './components/MemoryPanel'
 import HistoryPanel from './components/HistoryPanel'
 import WatchlistPanel from './components/WatchlistPanel'
 import Tour from './components/Tour'
+import MarketPage from './components/MarketPage'
+import { DisclaimerModal, Footer, HeaderNotice } from './components/Disclaimer'
 import { analyzeCsv, getHealth, getResult } from './api'
 import { fmt, pct } from './format'
 
 export default function App() {
-  const [tab, setTab] = useState('analyse')
+  const [tab, setTab] = useState('market')
+  const [hasBriefing, setHasBriefing] = useState(false)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [health, setHealth] = useState(null)
   const [tour, setTour] = useState(false)
+  // educational-use disclaimer: shown every time the app is opened (once per browser session)
+  const [accepted, setAccepted] = useState(() => {
+    try { return sessionStorage.getItem('nse-disclaimer-ok') === '1' } catch { return false }
+  })
+  const [reread, setReread] = useState(false)
+  const accept = () => {
+    setAccepted(true); setReread(false)
+    try { sessionStorage.setItem('nse-disclaimer-ok', '1') } catch { /* keep in memory only */ }
+  }
 
-  // open the tour automatically on the very first visit
+  // open the tour automatically on the very first visit — after the disclaimer has been accepted
   useEffect(() => {
+    if (!accepted) return
     try {
       if (!localStorage.getItem('nse-tour-done')) setTour(true)
     } catch { /* storage blocked: just don't auto-open */ }
-  }, [])
+  }, [accepted])
   const closeTour = () => {
     setTour(false)
     try { localStorage.setItem('nse-tour-done', '1') } catch { /* ignore */ }
   }
 
-  useEffect(() => { getHealth().then(setHealth).catch(() => setHealth(false)) }, [])
+  // keep checking: the backend may still be starting (Docker, first model download) or restarting
+  useEffect(() => {
+    let alive = true
+    let t
+    const check = () => getHealth()
+      .then((h) => { if (alive) { setHealth(h); if (!h.memory_ready) t = setTimeout(check, 5000) } })
+      .catch(() => { if (alive) { setHealth(false); t = setTimeout(check, 5000) } })
+    check()
+    return () => { alive = false; clearTimeout(t) }
+  }, [])
 
   const run = async (file, symbol, merge, ephemeral = false) => {
     setLoading(true); setError('')
@@ -71,23 +93,35 @@ export default function App() {
           <h1>NSE Stock Analyzer</h1>
           <span className="muted tiny" data-tour="header-status">
             Technical analysis · ML forecast · ChromaDB memory
-            {health === false && <b className="down"> · backend offline (start uvicorn on :8000)</b>}
-            {health && <> · {health.stored_analyses} analyses stored{health.data_dir && <> · data: {health.data_dir}</>}</>}
+            {health === false && (
+              <b className="down"> · backend not reachable — retrying… (Docker: <code>docker compose logs backend</code>; local: start uvicorn on port 8000)</b>
+            )}
+            {health && (
+              <>
+                {health.stored_analyses != null ? <> · {health.stored_analyses} analyses stored</> : <> · starting up…</>}
+                {health.data_dir && <> · data: {health.data_dir}{health.in_docker && ' (on your computer)'}</>}
+              </>
+            )}
           </span>
         </div>
         <div className="row">
         <button className="ghost" onClick={() => setTour(true)} title="Guided tour of the app">Tour</button>
         <nav className="seg" data-tour="tabs">
+          <button className={tab === 'market' ? 'on' : ''} onClick={() => setTab('market')}>Market</button>
           <button className={tab === 'analyse' ? 'on' : ''} onClick={() => setTab('analyse')}>Analyse</button>
           <button className={tab === 'watchlist' ? 'on' : ''} onClick={() => setTab('watchlist')}>Watchlist</button>
           <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History & search</button>
         </nav>
         </div>
       </header>
-      <Tour open={tour} onClose={closeTour} setTab={setTab} hasResult={!!result && !loading}
+      <HeaderNotice onOpen={() => setReread(true)} />
+      <DisclaimerModal open={!accepted || reread} reread={accepted} onAccept={accept} />
+      <Tour open={tour} onClose={closeTour} setTab={setTab} hasResult={!!result && !loading} hasBriefing={hasBriefing}
         onLoadSample={loadSample} loading={loading} />
 
-      {tab === 'watchlist' ? (
+      {tab === 'market' ? (
+        <MarketPage onOpen={openSaved} onBriefing={setHasBriefing} />
+      ) : tab === 'watchlist' ? (
         <WatchlistPanel onOpen={openSaved} onResult={(r) => { setResult(r); setTab('analyse'); window.scrollTo(0, 0) }} />
       ) : tab === 'history' ? (
         <HistoryPanel initialSymbol={m?.symbol} />
@@ -135,6 +169,7 @@ export default function App() {
           )}
         </div>
       )}
+      <Footer onOpen={() => setReread(true)} />
     </div>
   )
 }
